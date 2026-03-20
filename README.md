@@ -66,6 +66,8 @@ CREATE TABLE `task` (
 
 -- 3. 插入测试数据
 INSERT INTO `user` (username, password, nickname) VALUES ('admin', '123456', '管理员');
+
+
 ### 3.后端启动
 -- 1.使用 IDEA/Eclipse 打开后端项目。
 
