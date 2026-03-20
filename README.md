@@ -66,3 +66,19 @@ CREATE TABLE `task` (
 
 -- 3. 插入测试数据
 INSERT INTO `user` (username, password, nickname) VALUES ('admin', '123456', '管理员');
+### 3.后端启动
+-- 1.使用 IDEA/Eclipse 打开后端项目。
+
+-- 2.修改 application.yml 中的数据库账号和密码。
+
+-- 3.运行 TaskflowApplication.java。后端服务将在 http://localhost:8080 启动。
+### 4.前端启动
+-- 1.进入前端目录 taskflow-frontend。
+
+-- 2.安装依赖：npm install
+
+-- 3.启动项目：npm run dev
+
+浏览器访问 Vite 提示的本地地址（通常为 http://localhost:5173），使用 admin / 123456 登录体验。
+### 👨‍💻 作者
+全栈开发：[yu翔]
