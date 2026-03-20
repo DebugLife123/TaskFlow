@@ -36,6 +36,28 @@ public class LoginController {
         String token = JwtUtils.createToken(user.getId());
         return Result.success(token);
     }
+    // ✨ 新增：用户注册接口
+    @PostMapping("/register")
+    public Result<String> register(@RequestBody User registerUser) {
+        // 1. 检查用户名是否已经被别人注册了
+        QueryWrapper<User> wrapper = new QueryWrapper<>();
+        wrapper.eq("username", registerUser.getUsername());
+        User existUser = userMapper.selectOne(wrapper);
+
+        if (existUser != null) {
+            return error(400, "该用户名已被注册，请换一个");
+        }
+
+        // 2. 注册新用户 (为了简单，昵称默认等于用户名)
+        if (registerUser.getNickname() == null || registerUser.getNickname().isEmpty()) {
+            registerUser.setNickname(registerUser.getUsername());
+        }
+
+        // 3. 插入数据库
+        userMapper.insert(registerUser);
+
+        return Result.success("注册成功");
+    }
 
     // 内部快捷方法，用于返回错误信息
     private Result<String> error(int code, String msg) {

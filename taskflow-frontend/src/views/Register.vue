@@ -2,20 +2,20 @@
   <div class="login-container">
     <el-card class="login-card">
       <template #header>
-        <h2 style="text-align: center; margin: 0;">TaskFlow 登录</h2>
+        <h2 style="text-align: center; margin: 0;">TaskFlow 注册</h2>
       </template>
       <el-form :model="form" label-width="0">
         <el-form-item>
-          <el-input v-model="form.username" placeholder="用户名" prefix-icon="User" />
+          <el-input v-model="form.username" placeholder="请输入新账号" prefix-icon="User" />
         </el-form-item>
         <el-form-item>
-          <el-input v-model="form.password" type="password" placeholder="密码" prefix-icon="Lock" show-password />
+          <el-input v-model="form.password" type="password" placeholder="请输入密码" prefix-icon="Lock" show-password />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" style="width: 100%" @click="handleLogin" :loading="loading">登 录</el-button>
+          <el-button type="success" style="width: 100%" @click="handleRegister" :loading="loading">立即注册</el-button>
         </el-form-item>
         <div style="text-align: right; margin-top: 10px;">
-          <el-link type="primary" :underline="false" @click="router.push('/register')">无账号，去注册 ➡️</el-link>
+          <el-link type="info" :underline="false" @click="router.push('/login')">⬅️ 已有账号？返回登录</el-link>
         </div>
       </el-form>
     </el-card>
@@ -32,17 +32,15 @@ const router = useRouter()
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
 
-const handleLogin = async () => {
-  if (!form.username || !form.password) return ElMessage.warning('请输入账号密码')
+const handleRegister = async () => {
+  if (!form.username || !form.password) return ElMessage.warning('账号和密码不能为空！')
   
   loading.value = true
   try {
-    const res = await axios.post('/api/user/login', form)
+    const res = await axios.post('/api/user/register', form)
     if (res.data.code === 200) {
-      // 🔑 核心：把后端发的 Token 存入浏览器的“保险箱”
-      localStorage.setItem('token', res.data.data)
-      ElMessage.success('登录成功！')
-      router.push('/board') // 跳转到看板
+      ElMessage.success('🎉 注册成功！请登录')
+      router.push('/login') // ✨ 注册成功，自动跳转回登录页
     } else {
       ElMessage.error(res.data.message)
     }

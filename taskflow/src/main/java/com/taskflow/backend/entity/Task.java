@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import com.fasterxml.jackson.annotation.JsonFormat;
 
 @Data // Lombok 注解，自动帮我们生成 get/set 方法，让代码更整洁
 @TableName("task") // 告诉 MBP 这个类对应数据库里的 task 表
@@ -93,7 +95,30 @@ public class Task {
         this.id = id;
     }
 
+    public LocalDate getStartDate() {
+        return startDate;
+    }
+
+    public void setStartDate(LocalDate startDate) {
+        this.startDate = startDate;
+    }
+
+    public LocalDate getEndDate() {
+        return endDate;
+    }
+
+    public void setEndDate(LocalDate endDate) {
+        this.endDate = endDate;
+    }
+
     private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+    // ✨ 新增：开始时间，强制格式化为 yyyy-MM-dd
+    @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
+    private LocalDate startDate;
+
+    // ✨ 新增：截止时间
+    @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
+    private LocalDate endDate;
 }

@@ -12,7 +12,9 @@ const dialogVisible = ref(false)
 const taskForm = reactive({ 
   title: '', 
   content: '' ,
-  priority: 1 // 默认选中“普通”
+  priority: 1 ,// 默认选中“普通”
+  startDate: '', // ✨ 新增开始时间
+  endDate: ''    // ✨ 新增截止时间
 })
 
 // --- 2. 数据获取逻辑 ---
@@ -59,6 +61,8 @@ const submitTask = async () => {
       taskForm.title = ''
       taskForm.content = ''
       taskForm.priority = 1 // 恢复默认优先级为普通
+      taskForm.startDate = '' // 慢复默认开始时间为空字符串
+      taskForm.endDate = '' // 慢复默认截止时间为空字符串
       
       // 4. 刷新列表
       fetchTasks() 
@@ -147,6 +151,11 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
                 <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
               </div>
                 <p class="task-content">{{ task.content }}</p>
+
+                <div v-if="task.startDate || task.endDate" style="font-size: 12px; color: #909399; margin-top: 10px; display: flex; align-items: center;">
+              <el-icon style="margin-right: 4px;"><Calendar /></el-icon>
+              <span>{{ task.startDate || '未定' }} 至 {{ task.endDate || '未定' }}</span>
+            </div>
                 <div class="card-footer">
                   <el-button size="small" type="success" plain @click="updateStatus(task, 1)">开始制作 ➡️</el-button>
                   <el-button size="small" type="danger" text @click="deleteTask(task.id)">删除</el-button>
@@ -166,6 +175,13 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
                 <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
               </div>
                 <p class="task-content">{{ task.content }}</p>
+
+                <div v-if="task.startDate || task.endDate" style="font-size: 12px; color: #909399; margin-top: 10px; display: flex; align-items: center;">
+              <el-icon style="margin-right: 4px;"><Calendar /></el-icon>
+              <span>{{ task.startDate || '未定' }} 至 {{ task.endDate || '未定' }}</span>
+            </div>
+
+
                 <div class="card-footer">
                   <el-button size="small" type="info" plain @click="updateStatus(task, 0)">⬅️ 撤回</el-button>
                   <el-button size="small" type="success" plain @click="updateStatus(task, 2)">完成 ➡️</el-button>
@@ -185,6 +201,12 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
                 <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
               </div>
                 <p class="task-content">{{ task.content }}</p>
+                <div v-if="task.startDate || task.endDate" style="font-size: 12px; color: #909399; margin-top: 10px; display: flex; align-items: center;">
+              <el-icon style="margin-right: 4px;"><Calendar /></el-icon>
+              <span>{{ task.startDate || '未定' }} 至 {{ task.endDate || '未定' }}</span>
+            </div>
+
+
                 <div class="card-footer">
                   <el-button size="small" type="warning" plain @click="updateStatus(task, 1)">⬅️ 返工</el-button>
                   <el-button size="small" type="danger" text @click="deleteTask(task.id)">删除</el-button>
@@ -208,6 +230,24 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
             <el-option label="🟡 中等" :value="2" />
             <el-option label="🔴 紧急" :value="3" />
           </el-select>
+        </el-form-item>
+
+
+        <el-form-item label="起止时间">
+          <el-date-picker
+            v-model="taskForm.startDate"
+            type="date"
+            placeholder="开始日期"
+            value-format="YYYY-MM-DD"
+            style="width: 48%; margin-right: 4%;"
+          />
+          <el-date-picker
+            v-model="taskForm.endDate"
+            type="date"
+            placeholder="截止日期"
+            value-format="YYYY-MM-DD"
+            style="width: 48%;"
+          />
         </el-form-item>
 
 
