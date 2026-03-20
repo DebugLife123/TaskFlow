@@ -15,7 +15,19 @@ public class Task {
 
     private Long boardId;
     private String title;
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
     private String content;
+    private Long userId; // ✨ 新增字段
+
+
 
     public String getContent() {
         return content;
