@@ -9,7 +9,11 @@ const router = useRouter()
 const nickname = ref('加载中...')
 const taskList = ref([]) // ✅ 只保留这一个声明
 const dialogVisible = ref(false)
-const taskForm = reactive({ title: '', content: '' })
+const taskForm = reactive({ 
+  title: '', 
+  content: '' ,
+  priority: 1 // 默认选中“普通”
+})
 
 // --- 2. 数据获取逻辑 ---
 const fetchTasks = async () => {
@@ -35,19 +39,36 @@ const fetchUserInfo = async () => {
 }
 
 // --- 3. 任务操作逻辑 ---
+// ✨ 替换你原本的 submitTask 函数
 const submitTask = async () => {
-  if (!taskForm.title) return ElMessage.warning('请输入任务标题！')
+  // 1. 标题非空校验
+  if (!taskForm.title) {
+    ElMessage.warning('请输入任务标题！')
+    return
+  }
+  
   try {
+    // 2. 发送请求
     const res = await axios.post('/api/tasks/add', taskForm)
+    
     if (res.data.code === 200) {
       ElMessage.success('任务添加成功！')
+      
+      // 3. 收尾工作（注意这里的拼写，千万别拼错变量名）
       dialogVisible.value = false
       taskForm.title = ''
       taskForm.content = ''
-      fetchTasks()
+      taskForm.priority = 1 // 恢复默认优先级为普通
+      
+      // 4. 刷新列表
+      fetchTasks() 
+    } else {
+      ElMessage.error(res.data.message || '后端拒绝了添加')
     }
   } catch (error) {
-    ElMessage.error('添加失败')
+    // 💡 导师黑科技：把真正的报错原因打印到浏览器的控制台
+    console.error("🚨 抓到捣鬼的报错了：", error) 
+    ElMessage.error('添加失败，请按 F12 查看控制台红字')
   }
 }
 
@@ -119,7 +140,12 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
             <el-card class="board-column">
               <template #header><div class="column-header">待办事项 (TODO)</div></template>
               <el-card v-for="task in todoTasks" :key="task.id" class="task-card" shadow="hover">
-                <h4>{{ task.title }}</h4>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
+                <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
+                <el-tag v-else-if="task.priority === 2" type="warning" size="small" effect="dark">中等</el-tag>
+                <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
+              </div>
                 <p class="task-content">{{ task.content }}</p>
                 <div class="card-footer">
                   <el-button size="small" type="success" plain @click="updateStatus(task, 1)">开始制作 ➡️</el-button>
@@ -133,7 +159,12 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
             <el-card class="board-column">
               <template #header><div class="column-header" style="color: #e6a23c;">进行中 (DOING)</div></template>
               <el-card v-for="task in doingTasks" :key="task.id" class="task-card" shadow="hover">
-                <h4>{{ task.title }}</h4>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
+                <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
+                <el-tag v-else-if="task.priority === 2" type="warning" size="small" effect="dark">中等</el-tag>
+                <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
+              </div>
                 <p class="task-content">{{ task.content }}</p>
                 <div class="card-footer">
                   <el-button size="small" type="info" plain @click="updateStatus(task, 0)">⬅️ 撤回</el-button>
@@ -147,7 +178,12 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
             <el-card class="board-column">
               <template #header><div class="column-header" style="color: #67c23a;">已完成 (DONE)</div></template>
               <el-card v-for="task in doneTasks" :key="task.id" class="task-card" shadow="hover">
-                <h4>{{ task.title }}</h4>
+               <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
+                <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
+                <el-tag v-else-if="task.priority === 2" type="warning" size="small" effect="dark">中等</el-tag>
+                <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
+              </div>
                 <p class="task-content">{{ task.content }}</p>
                 <div class="card-footer">
                   <el-button size="small" type="warning" plain @click="updateStatus(task, 1)">⬅️ 返工</el-button>
@@ -165,6 +201,17 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
         <el-form-item label="任务标题">
           <el-input v-model="taskForm.title" placeholder="准备做什么？" />
         </el-form-item>
+
+<el-form-item label="优先级">
+          <el-select v-model="taskForm.priority" placeholder="请选择优先级" style="width: 100%">
+            <el-option label="🟢 普通" :value="1" />
+            <el-option label="🟡 中等" :value="2" />
+            <el-option label="🔴 紧急" :value="3" />
+          </el-select>
+        </el-form-item>
+
+
+
         <el-form-item label="任务详情">
           <el-input v-model="taskForm.content" type="textarea" placeholder="写点详细的备注吧..." />
         </el-form-item>

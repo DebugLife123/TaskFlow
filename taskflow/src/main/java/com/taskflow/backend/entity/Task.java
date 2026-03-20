@@ -26,8 +26,16 @@ public class Task {
 
     private String content;
     private Long userId; // ✨ 新增字段
+    // ✨ 新增优先级字段
+    private Integer priority;
 
+    public Integer getPriority() {
+        return priority;
+    }
 
+    public void setPriority(Integer priority) {
+        this.priority = priority;
+    }
 
     public String getContent() {
         return content;
