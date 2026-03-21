@@ -1,29 +1,49 @@
 <script setup>
-import { ref, reactive, onMounted, computed, watch ,shallowRef} from 'vue'
+import { ref, reactive, onMounted, computed, watch, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus' // ✨ 补上了 ElMessageBox
+import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
-import * as echarts from 'echarts' // ✨ 新增：完整引入 ECharts
+import * as echarts from 'echarts'
 
-// --- 1. 响应式数据定义 ---
+// ================= 1. 响应式数据定义 =================
 const router = useRouter()
 const nickname = ref('加载中...')
-const taskList = ref([]) // ✅ 只保留这一个声明
-// --- 新增：搜索与过滤的响应式变量 ---
-const searchQuery = ref('')     // 存放用户输入的搜索关键字
-const filterPriority = ref('')  // 存放选中的优先级，默认空表示“看全部”
-// --- 新增：ECharts 图表容器引用 ---
-const statusChartRef = ref(null)    // 指向状态图表的 DOM
-const priorityChartRef = ref(null)  // 指向优先级图表的 DOM
-// --- ECharts 实例引用（导师黑科技：必须用 shallowRef 提升性能） ---
+const taskList = ref([]) 
+
+// 搜索与过滤变量
+const searchQuery = ref('')     
+const filterPriority = ref('')  
+
+// 折叠状态变量
+const isTodoCollapsed = ref(false)
+const isDoingCollapsed = ref(false)
+const isDoneCollapsed = ref(false)
+
+// ECharts 引用
+const statusChartRef = ref(null)    
+const priorityChartRef = ref(null)  
 const statusChart = shallowRef(null)
 const priorityChart = shallowRef(null)
 
-// --- 1. 初始化并渲染图表的方法 ---
+// 弹窗与表单开关
+const dialogVisible = ref(false)      // 新增弹窗开关
+const editDrawerVisible = ref(false)  // 编辑抽屉开关
+
+// 表单数据
+const taskForm = reactive({ 
+  title: '', 
+  content: '',
+  priority: 1,
+  startDate: '', 
+  endDate: ''    
+})
+const editTaskForm = ref({}) 
+
+
+// ================= 2. ECharts 图表渲染 =================
 const updateCharts = () => {
   if (!statusChart.value || !priorityChart.value) return;
 
-  // 📊 左侧图表：任务状态柱状图
   const todoCount = taskList.value.filter(t => t.status === 0).length
   const doingCount = taskList.value.filter(t => t.status === 1).length
   const doneCount = taskList.value.filter(t => t.status === 2).length
@@ -33,7 +53,7 @@ const updateCharts = () => {
     tooltip: { trigger: 'item' },
     grid: { left: '10%', right: '10%', bottom: '15%' },
     xAxis: { type: 'category', data: ['待办 (TODO)', '进行中 (DOING)', '已完成 (DONE)'] },
-    yAxis: { type: 'value', minInterval: 1 }, // 保证Y轴是整数
+    yAxis: { type: 'value', minInterval: 1 },
     series: [{
       type: 'bar',
       barWidth: '40%',
@@ -46,7 +66,6 @@ const updateCharts = () => {
     }]
   })
 
-  // 🥧 右侧图表：优先级环形图
   const p1Count = taskList.value.filter(t => t.priority === 1).length
   const p2Count = taskList.value.filter(t => t.priority === 2).length
   const p3Count = taskList.value.filter(t => t.priority === 3).length
@@ -57,7 +76,7 @@ const updateCharts = () => {
     legend: { bottom: '0', left: 'center' },
     series: [{
       type: 'pie',
-      radius: ['40%', '70%'], // 环形图设计更显高级
+      radius: ['40%', '70%'],
       avoidLabelOverlap: false,
       itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
       label: { show: false, position: 'center' },
@@ -72,97 +91,7 @@ const updateCharts = () => {
 }
 
 
-const dialogVisible = ref(false)
-const taskForm = reactive({ 
-  title: '', 
-  content: '' ,
-  priority: 1 ,// 默认选中“普通”
-  startDate: '', // ✨ 新增开始时间
-  endDate: ''    // ✨ 新增截止时间
-})
-// --- 新增：编辑任务相关的状态与数据 ---
-const editDialogVisible = ref(false)
-// 用来存放当前正在编辑的任务数据，初始为空对象
-const editTaskForm = ref({}) 
-
-// 打开编辑弹窗的方法
-const openEditDialog = (task) => {
-  // 💡 导师黑科技：这里使用 {...task} 浅拷贝！
-  // 为什么不直接 editTaskForm.value = task？
-  // 因为如果直接赋值，你在弹窗里修改文字，背后的看板卡片文字会同步跟着变（哪怕你还没点保存）。
-  // 用浅拷贝相当于创建了一个“替身”，随便改，只有点保存时才提交给后端。
-  editTaskForm.value = { ...task }
-  editDialogVisible.value = true
-}
-
-// 提交编辑的方法
-const submitEditTask = async () => {
-  if (!editTaskForm.value.title) {
-    return ElMessage.warning('任务标题不能为空！')
-  }
-  
-  try {
-    // ✨ 核心业务逻辑：强制把状态改回 0（待办 TODO）
-    editTaskForm.value.status = 0
-    
-    // 调用后端更新接口
-    const res = await axios.post('/api/tasks/update', editTaskForm.value)
-    if (res.data.code === 200) {
-      ElMessage.success('任务修改成功，已转入待办事项！')
-      editDialogVisible.value = false // 关闭弹窗
-      fetchTasks() // 重新拉取最新列表，刷新页面
-    } else {
-      ElMessage.error(res.data.message || '修改失败')
-    }
-  } catch (error) {
-    console.error("修改任务报错：", error)
-    ElMessage.error('修改失败，请检查网络')
-  }
-}
-// --- ✨ 新增：原生拖拽流转核心逻辑 ---
-const draggedTask = ref(null) // 用来记录当前被鼠标抓在空中的是哪个任务
-
-// 1. 拖拽开始：把当前抓起的卡片存起来
-const handleDragStart = (task) => {
-  draggedTask.value = task
-}
-
-// 2. 拖拽结束：松开鼠标时清理状态
-const handleDragEnd = () => {
-  draggedTask.value = null
-}
-
-// 3. 拖拽放下（松手）：最核心的业务逻辑
-const handleDrop = async (newStatus) => {
-  if (!draggedTask.value) return
-  if (draggedTask.value.status === newStatus) return // 如果是在同一列原地放下，啥也不做
-
-  // 记录老状态，为了做容错处理
-  const oldStatus = draggedTask.value.status
-  
-  try {
-    // 💡 导师黑科技：乐观更新 (Optimistic UI)
-    // 先在前端瞬间把卡片状态改掉，用户体验是“零延迟”的丝滑
-    draggedTask.value.status = newStatus 
-    
-    // 然后再悄悄发请求给后端更新数据库
-    const res = await axios.post('/api/tasks/update', draggedTask.value)
-    if (res.data.code === 200) {
-      ElMessage.success('流转成功！')
-    } else {
-      throw new Error(res.data.message)
-    }
-  } catch (error) {
-    // 如果后端报错或者断网了，把卡片状态弹回原来的那一列
-    draggedTask.value.status = oldStatus
-    ElMessage.error('拖拽同步失败，已回滚')
-  } finally {
-    draggedTask.value = null
-    fetchTasks() // 保险起见，重新同步一次最新数据，图表也会跟着刷新
-  }
-}
-
-// --- 2. 数据获取逻辑 ---
+// ================= 3. 数据获取逻辑 =================
 const fetchTasks = async () => {
   try {
     const response = await axios.get('/api/tasks/list')
@@ -185,39 +114,48 @@ const fetchUserInfo = async () => {
   }
 }
 
-// --- 3. 任务操作逻辑 ---
-// ✨ 替换你原本的 submitTask 函数
+
+// ================= 4. 任务操作逻辑 (增删改查) =================
 const submitTask = async () => {
-  // 1. 标题非空校验
-  if (!taskForm.title) {
-    ElMessage.warning('请输入任务标题！')
-    return
-  }
-  
+  if (!taskForm.title) return ElMessage.warning('请输入任务标题！')
   try {
-    // 2. 发送请求
     const res = await axios.post('/api/tasks/add', taskForm)
-    
     if (res.data.code === 200) {
       ElMessage.success('任务添加成功！')
-      
-      // 3. 收尾工作（注意这里的拼写，千万别拼错变量名）
       dialogVisible.value = false
       taskForm.title = ''
       taskForm.content = ''
-      taskForm.priority = 1 // 恢复默认优先级为普通
-      taskForm.startDate = '' // 慢复默认开始时间为空字符串
-      taskForm.endDate = '' // 慢复默认截止时间为空字符串
-      
-      // 4. 刷新列表
+      taskForm.priority = 1 
+      taskForm.startDate = '' 
+      taskForm.endDate = '' 
       fetchTasks() 
     } else {
       ElMessage.error(res.data.message || '后端拒绝了添加')
     }
   } catch (error) {
-    // 💡 导师黑科技：把真正的报错原因打印到浏览器的控制台
-    console.error("🚨 抓到捣鬼的报错了：", error) 
-    ElMessage.error('添加失败，请按 F12 查看控制台红字')
+    console.error("添加失败：", error) 
+    ElMessage.error('添加失败，请检查网络')
+  }
+}
+
+const openEditDialog = (task) => {
+  editTaskForm.value = { ...task }
+  editDrawerVisible.value = true
+}
+
+const submitEditTask = async () => {
+  if (!editTaskForm.value.title) return ElMessage.warning('任务标题不能为空！')
+  try {
+    const res = await axios.post('/api/tasks/update', editTaskForm.value)
+    if (res.data.code === 200) {
+      ElMessage.success('任务修改成功！')
+      editDrawerVisible.value = false 
+      fetchTasks() 
+    } else {
+      ElMessage.error(res.data.message || '修改失败')
+    }
+  } catch (error) {
+    ElMessage.error('修改失败，请检查网络')
   }
 }
 
@@ -246,7 +184,35 @@ const deleteTask = async (id) => {
   }
 }
 
-// --- 4. 退出登录 ---
+
+// ================= 5. 拖拽流转核心逻辑 =================
+const draggedTask = ref(null)
+
+const handleDragStart = (task) => { draggedTask.value = task }
+const handleDragEnd = () => { draggedTask.value = null }
+const handleDrop = async (newStatus) => {
+  if (!draggedTask.value || draggedTask.value.status === newStatus) return
+
+  const oldStatus = draggedTask.value.status
+  try {
+    draggedTask.value.status = newStatus 
+    const res = await axios.post('/api/tasks/update', draggedTask.value)
+    if (res.data.code === 200) {
+      ElMessage.success('流转成功！')
+    } else {
+      throw new Error(res.data.message)
+    }
+  } catch (error) {
+    draggedTask.value.status = oldStatus
+    ElMessage.error('拖拽同步失败，已回滚')
+  } finally {
+    draggedTask.value = null
+    fetchTasks() 
+  }
+}
+
+
+// ================= 6. 退出登录 =================
 const handleLogout = () => {
   ElMessageBox.confirm('确定要退出系统吗？', '提示', { type: 'warning' }).then(() => {
     localStorage.removeItem('token')
@@ -255,52 +221,39 @@ const handleLogout = () => {
   }).catch(() => {})
 }
 
-// --- 5. 生命周期钩子 ---
+
+// ================= 7. 生命周期与监听 =================
 onMounted(() => {
   fetchUserInfo()
   fetchTasks()
-  // 确保 DOM 渲染完毕后再初始化 ECharts
   setTimeout(() => {
     if (statusChartRef.value) statusChart.value = echarts.init(statusChartRef.value)
     if (priorityChartRef.value) priorityChart.value = echarts.init(priorityChartRef.value)
-    
-    // 如果刚进页面已经有数据了，直接画图
-    if (taskList.value.length > 0) {
-      updateCharts()
-    }
+    if (taskList.value.length > 0) updateCharts()
   }, 100)
-  // 监听浏览器窗口大小变化，让图表自动缩放（极其影响体验的细节！）
+
   window.addEventListener('resize', () => {
     statusChart.value?.resize()
     priorityChart.value?.resize()
   })
 })
 
-// --- 3. 建立响应式联动：只要任务列表数据一变，自动重新画图 ---
 watch(() => taskList.value, () => {
   updateCharts()
 }, { deep: true })
 
-// --- 6. 计算属性 ---
-// --- 6. 计算属性：超级数据漏斗 ---
 
-// 第一层漏斗：先根据【搜索词】和【优先级】过滤出所有符合条件的任务
+// ================= 8. 数据漏斗 (计算属性) =================
 const filteredTaskList = computed(() => {
   return taskList.value.filter(task => {
-    // 1. 检查搜索词：如果没输入搜索词，就算匹配成功；如果输入了，就看标题或详情里包不包含这个词
     const matchSearch = !searchQuery.value || 
       task.title.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
       (task.content && task.content.toLowerCase().includes(searchQuery.value.toLowerCase()));
-      
-    // 2. 检查优先级：如果没选优先级，就算匹配成功；如果选了，就必须完全等于选中的级别
     const matchPriority = !filterPriority.value || task.priority === filterPriority.value;
-    
-    // 必须同时满足上面两个条件，这个任务才能流到下一步
     return matchSearch && matchPriority;
   });
 });
 
-// 第二层漏斗：把刚刚过滤出来的结果，再按照 待办/进行中/已完成 分发给三列
 const todoTasks = computed(() => filteredTaskList.value.filter(task => task.status === 0))
 const doingTasks = computed(() => filteredTaskList.value.filter(task => task.status === 1))
 const doneTasks = computed(() => filteredTaskList.value.filter(task => task.status === 2))
@@ -339,6 +292,7 @@ const doneTasks = computed(() => filteredTaskList.value.filter(task => task.stat
 
           <el-button type="primary" @click="dialogVisible = true"> + 新增任务 </el-button>
         </div>
+
         <el-collapse style="margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: none; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);">
           <el-collapse-item name="1">
             <template #title>
@@ -361,119 +315,151 @@ const doneTasks = computed(() => filteredTaskList.value.filter(task => task.stat
           </el-collapse-item>
         </el-collapse>
         
-        <el-row :gutter="20">
-          <el-col :span="8">
+       <div class="kanban-flex-container">
+          
+          <div class="kanban-column" :class="{ 'is-collapsed': isTodoCollapsed }">
             <el-card class="board-column" @dragover.prevent @drop="handleDrop(0)">
-              <template #header><div class="column-header">待办事项 (TODO)</div></template>
-              <el-card 
-                v-for="task in todoTasks" :key="task.id" 
-                class="task-card" shadow="hover" 
-                @click="openEditDialog(task)" 
-                style="cursor: grab;"
-                draggable="true"
-                @dragstart="handleDragStart(task)"
-                @dragend="handleDragEnd"
-                :class="{ 'is-dragging': draggedTask?.id === task.id }"
-              >
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
-                <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
-                <el-tag v-else-if="task.priority === 2" type="warning" size="small" effect="dark">中等</el-tag>
-                <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
-              </div>
-                <p class="task-content">{{ task.content }}</p>
-
-                <div v-if="task.startDate || task.endDate" style="font-size: 12px; color: #909399; margin-top: 10px; display: flex; align-items: center;">
-              <el-icon style="margin-right: 4px;"><Calendar /></el-icon>
-              <span>{{ task.startDate || '未定' }} 至 {{ task.endDate || '未定' }}</span>
-            </div>
-                <div class="card-footer">
-                  <el-button size="small" type="success" plain @click.stop="updateStatus(task, 1)">开始制作 ➡️</el-button>
-                  <el-button size="small" type="danger" text @click.stop="deleteTask(task.id)">删除</el-button>
+              <template #header>
+                <div class="column-header-flex">
+                  <span v-show="!isTodoCollapsed" class="column-header">待办事项 (TODO)</span>
+                  <el-button size="small" circle @click="isTodoCollapsed = !isTodoCollapsed">
+                    <el-icon><ArrowLeft v-if="!isTodoCollapsed"/><ArrowRight v-else/></el-icon>
+                  </el-button>
                 </div>
-              </el-card>
-            </el-card>
-          </el-col>
+              </template>
+              
+              <div v-show="!isTodoCollapsed">
+                <el-card 
+                  v-for="task in todoTasks" :key="task.id" 
+                  class="task-card" shadow="hover" 
+                  @click="openEditDialog(task)" 
+                  style="cursor: grab;"
+                  draggable="true"
+                  @dragstart="handleDragStart(task)"
+                  @dragend="handleDragEnd"
+                  :class="{ 'is-dragging': draggedTask?.id === task.id }"
+                >
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
+                    <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
+                    <el-tag v-else-if="task.priority === 2" type="warning" size="small" effect="dark">中等</el-tag>
+                    <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
+                  </div>
+                  <p class="task-content">{{ task.content }}</p>
+                  <div v-if="task.startDate || task.endDate" style="font-size: 12px; color: #909399; margin-top: 10px; display: flex; align-items: center;">
+                    <el-icon style="margin-right: 4px;"><Calendar /></el-icon>
+                    <span>{{ task.startDate || '未定' }} 至 {{ task.endDate || '未定' }}</span>
+                  </div>
+                  <div class="card-footer">
+                    <el-button size="small" type="success" plain @click.stop="updateStatus(task, 1)">开始制作 ➡️</el-button>
+                    <el-button size="small" type="danger" text @click.stop="deleteTask(task.id)">删除</el-button>
+                  </div>
+                </el-card>
+              </div>
 
-          <el-col :span="8">
+              <div v-show="isTodoCollapsed" class="vertical-title">待办事项</div>
+            </el-card>
+          </div>
+
+          <div class="kanban-column" :class="{ 'is-collapsed': isDoingCollapsed }">
             <el-card class="board-column" @dragover.prevent @drop="handleDrop(1)">
-              <template #header><div class="column-header" style="color: #e6a23c;">进行中 (DOING)</div></template>
-            <el-card 
-                v-for="task in doingTasks" :key="task.id" 
-                class="task-card" shadow="hover" 
-                @click="openEditDialog(task)" 
-                style="cursor: grab;"
-                draggable="true"
-                @dragstart="handleDragStart(task)"
-                @dragend="handleDragEnd"
-                :class="{ 'is-dragging': draggedTask?.id === task.id }"
-              >
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
-                <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
-                <el-tag v-else-if="task.priority === 2" type="warning" size="small" effect="dark">中等</el-tag>
-                <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
-              </div>
-                <p class="task-content">{{ task.content }}</p>
-
-                <div v-if="task.startDate || task.endDate" style="font-size: 12px; color: #909399; margin-top: 10px; display: flex; align-items: center;">
-              <el-icon style="margin-right: 4px;"><Calendar /></el-icon>
-              <span>{{ task.startDate || '未定' }} 至 {{ task.endDate || '未定' }}</span>
-            </div>
-
-
-                <div class="card-footer">
-                  <el-button size="small" type="info" plain @click.stop="updateStatus(task, 0)">⬅️ 撤回</el-button>
-                  <el-button size="small" type="success" plain @click.stop="updateStatus(task, 2)">完成 ➡️</el-button>
+              <template #header>
+                <div class="column-header-flex">
+                  <span v-show="!isDoingCollapsed" class="column-header" style="color: #e6a23c;">进行中 (DOING)</span>
+                  <el-button size="small" circle @click="isDoingCollapsed = !isDoingCollapsed">
+                    <el-icon><ArrowLeft v-if="!isDoingCollapsed"/><ArrowRight v-else/></el-icon>
+                  </el-button>
                 </div>
-              </el-card>
-            </el-card>
-          </el-col>
+              </template>
+              
+              <div v-show="!isDoingCollapsed">
+                <el-card 
+                  v-for="task in doingTasks" :key="task.id" 
+                  class="task-card" shadow="hover" 
+                  @click="openEditDialog(task)" 
+                  style="cursor: grab;"
+                  draggable="true"
+                  @dragstart="handleDragStart(task)"
+                  @dragend="handleDragEnd"
+                  :class="{ 'is-dragging': draggedTask?.id === task.id }"
+                >
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
+                    <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
+                    <el-tag v-else-if="task.priority === 2" type="warning" size="small" effect="dark">中等</el-tag>
+                    <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
+                  </div>
+                  <p class="task-content">{{ task.content }}</p>
+                  <div v-if="task.startDate || task.endDate" style="font-size: 12px; color: #909399; margin-top: 10px; display: flex; align-items: center;">
+                    <el-icon style="margin-right: 4px;"><Calendar /></el-icon>
+                    <span>{{ task.startDate || '未定' }} 至 {{ task.endDate || '未定' }}</span>
+                  </div>
+                  <div class="card-footer">
+                    <el-button size="small" type="info" plain @click.stop="updateStatus(task, 0)">⬅️ 撤回</el-button>
+                    <el-button size="small" type="success" plain @click.stop="updateStatus(task, 2)">完成 ➡️</el-button>
+                  </div>
+                </el-card>
+              </div>
 
-          <el-col :span="8">
+              <div v-show="isDoingCollapsed" class="vertical-title" style="color: #e6a23c;">进行中</div>
+            </el-card>
+          </div>
+
+          <div class="kanban-column" :class="{ 'is-collapsed': isDoneCollapsed }">
             <el-card class="board-column" @dragover.prevent @drop="handleDrop(2)">
-              <template #header><div class="column-header" style="color: #67c23a;">已完成 (DONE)</div></template>
-             <el-card 
-                v-for="task in doneTasks" :key="task.id" 
-                class="task-card" shadow="hover" 
-                @click="openEditDialog(task)" 
-                style="cursor: grab;"
-                draggable="true"
-                @dragstart="handleDragStart(task)"
-                @dragend="handleDragEnd"
-                :class="{ 'is-dragging': draggedTask?.id === task.id }"
-              >
-               <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
-                <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
-                <el-tag v-else-if="task.priority === 2" type="warning" size="small" effect="dark">中等</el-tag>
-                <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
-              </div>
-                <p class="task-content">{{ task.content }}</p>
-                <div v-if="task.startDate || task.endDate" style="font-size: 12px; color: #909399; margin-top: 10px; display: flex; align-items: center;">
-              <el-icon style="margin-right: 4px;"><Calendar /></el-icon>
-              <span>{{ task.startDate || '未定' }} 至 {{ task.endDate || '未定' }}</span>
-            </div>
-
-
-                <div class="card-footer">
-                  <el-button size="small" type="warning" plain @click.stop="updateStatus(task, 1)">⬅️ 返工</el-button>
-                  <el-button size="small" type="danger" text @click.stop="deleteTask(task.id)">删除</el-button>
+              <template #header>
+                <div class="column-header-flex">
+                  <span v-show="!isDoneCollapsed" class="column-header" style="color: #67c23a;">已完成 (DONE)</span>
+                  <el-button size="small" circle @click="isDoneCollapsed = !isDoneCollapsed">
+                    <el-icon><ArrowLeft v-if="!isDoneCollapsed"/><ArrowRight v-else/></el-icon>
+                  </el-button>
                 </div>
-              </el-card>
+              </template>
+              
+              <div v-show="!isDoneCollapsed">
+                <el-card 
+                  v-for="task in doneTasks" :key="task.id" 
+                  class="task-card" shadow="hover" 
+                  @click="openEditDialog(task)" 
+                  style="cursor: grab;"
+                  draggable="true"
+                  @dragstart="handleDragStart(task)"
+                  @dragend="handleDragEnd"
+                  :class="{ 'is-dragging': draggedTask?.id === task.id }"
+                >
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
+                    <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
+                    <el-tag v-else-if="task.priority === 2" type="warning" size="small" effect="dark">中等</el-tag>
+                    <el-tag v-else-if="task.priority === 3" type="danger" size="small" effect="dark">紧急</el-tag>
+                  </div>
+                  <p class="task-content">{{ task.content }}</p>
+                  <div v-if="task.startDate || task.endDate" style="font-size: 12px; color: #909399; margin-top: 10px; display: flex; align-items: center;">
+                    <el-icon style="margin-right: 4px;"><Calendar /></el-icon>
+                    <span>{{ task.startDate || '未定' }} 至 {{ task.endDate || '未定' }}</span>
+                  </div>
+                  <div class="card-footer">
+                    <el-button size="small" type="warning" plain @click.stop="updateStatus(task, 1)">⬅️ 返工</el-button>
+                    <el-button size="small" type="danger" text @click.stop="deleteTask(task.id)">删除</el-button>
+                  </div>
+                </el-card>
+              </div>
+
+              <div v-show="isDoneCollapsed" class="vertical-title" style="color: #67c23a;">已完成</div>
             </el-card>
-          </el-col>
-        </el-row>
+          </div>
+
+        </div>
       </el-main>
     </el-container>
 
-    <el-dialog v-model="dialogVisible" title="新增任务卡片" width="30%">
+    <el-dialog v-model="dialogVisible" title="✨ 新增任务卡片" width="30%">
       <el-form :model="taskForm" label-width="80px">
         <el-form-item label="任务标题">
           <el-input v-model="taskForm.title" placeholder="准备做什么？" />
         </el-form-item>
 
-<el-form-item label="优先级">
+        <el-form-item label="优先级">
           <el-select v-model="taskForm.priority" placeholder="请选择优先级" style="width: 100%">
             <el-option label="🟢 普通" :value="1" />
             <el-option label="🟡 中等" :value="2" />
@@ -481,25 +467,24 @@ const doneTasks = computed(() => filteredTaskList.value.filter(task => task.stat
           </el-select>
         </el-form-item>
 
-
         <el-form-item label="起止时间">
-          <el-date-picker
-            v-model="taskForm.startDate"
-            type="date"
-            placeholder="开始日期"
-            value-format="YYYY-MM-DD"
-            style="width: 48%; margin-right: 4%;"
-          />
-          <el-date-picker
-            v-model="taskForm.endDate"
-            type="date"
-            placeholder="截止日期"
-            value-format="YYYY-MM-DD"
-            style="width: 48%;"
-          />
+          <div style="display: flex; justify-content: space-between; width: 100%;">
+            <el-date-picker
+              v-model="taskForm.startDate"
+              type="date"
+              placeholder="开始日期"
+              value-format="YYYY-MM-DD"
+              style="width: 48%;"
+            />
+            <el-date-picker
+              v-model="taskForm.endDate"
+              type="date"
+              placeholder="截止日期"
+              value-format="YYYY-MM-DD"
+              style="width: 48%;"
+            />
+          </div>
         </el-form-item>
-
-
 
         <el-form-item label="任务详情">
           <el-input v-model="taskForm.content" type="textarea" placeholder="写点详细的备注吧..." />
@@ -511,14 +496,19 @@ const doneTasks = computed(() => filteredTaskList.value.filter(task => task.stat
       </template>
     </el-dialog>
 
-    <el-dialog v-model="editDialogVisible" title="编辑任务详情" width="30%">
-      <el-form :model="editTaskForm" label-width="80px">
+    <el-drawer 
+      v-model="editDrawerVisible" 
+      title="📝 编辑任务详情" 
+      size="400px"
+      destroy-on-close
+    >
+      <el-form :model="editTaskForm" label-position="top">
         <el-form-item label="任务标题">
-          <el-input v-model="editTaskForm.title" placeholder="准备做什么？" />
+          <el-input v-model="editTaskForm.title" placeholder="准备做什么？" size="large" />
         </el-form-item>
 
         <el-form-item label="优先级">
-          <el-select v-model="editTaskForm.priority" placeholder="请选择优先级" style="width: 100%">
+          <el-select v-model="editTaskForm.priority" placeholder="请选择优先级" style="width: 100%" size="large">
             <el-option label="🟢 普通" :value="1" />
             <el-option label="🟡 中等" :value="2" />
             <el-option label="🔴 紧急" :value="3" />
@@ -526,31 +516,41 @@ const doneTasks = computed(() => filteredTaskList.value.filter(task => task.stat
         </el-form-item>
 
         <el-form-item label="起止时间">
-          <el-date-picker
-            v-model="editTaskForm.startDate"
-            type="date"
-            placeholder="开始日期"
-            value-format="YYYY-MM-DD"
-            style="width: 48%; margin-right: 4%;"
-          />
-          <el-date-picker
-            v-model="editTaskForm.endDate"
-            type="date"
-            placeholder="截止日期"
-            value-format="YYYY-MM-DD"
-            style="width: 48%;"
-          />
+          <div style="display: flex; justify-content: space-between; width: 100%;">
+            <el-date-picker
+              v-model="editTaskForm.startDate"
+              type="date"
+              placeholder="开始日期"
+              value-format="YYYY-MM-DD"
+              style="width: 48%;"
+            />
+            <el-date-picker
+              v-model="editTaskForm.endDate"
+              type="date"
+              placeholder="截止日期"
+              value-format="YYYY-MM-DD"
+              style="width: 48%;"
+            />
+          </div>
         </el-form-item>
 
         <el-form-item label="任务详情">
-          <el-input v-model="editTaskForm.content" type="textarea" placeholder="写点详细的备注吧..." />
+          <el-input 
+            v-model="editTaskForm.content" 
+            type="textarea" 
+            :rows="6" 
+            placeholder="写点详细的备注吧..." 
+          />
         </el-form-item>
       </el-form>
+      
       <template #footer>
-        <el-button @click="editDialogVisible = false">取 消</el-button>
-        <el-button type="primary" @click="submitEditTask">保存修改</el-button>
+        <div style="flex: auto; display: flex; justify-content: flex-end; gap: 10px;">
+          <el-button @click="editDrawerVisible = false">取 消</el-button>
+          <el-button type="primary" @click="submitEditTask">保存修改</el-button>
+        </div>
       </template>
-    </el-dialog>
+    </el-drawer>
 
   </div>
 </template>
@@ -574,11 +574,47 @@ const doneTasks = computed(() => filteredTaskList.value.filter(task => task.stat
 .card-footer { margin-top: 15px; text-align: right; }
 .task-content { font-size: 14px; color: #666; margin-top: 8px; }
 h4 { margin: 0; color: #333; }
-/* ✨ 新增：被抓起时的卡片虚影特效 */
+
+/* 卡片拖拽特效 */
 .is-dragging {
   opacity: 0.4;
   transform: scale(0.98);
   box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
   border: 1px dashed #409EFF !important;
+}
+
+/* Flex 伸缩布局 */
+.kanban-flex-container {
+  display: flex;
+  gap: 20px;
+  align-items: stretch;
+  min-height: 500px;
+}
+.kanban-column {
+  flex: 1; 
+  transition: all 0.3s ease; 
+  min-width: 0; 
+}
+.kanban-column.is-collapsed {
+  flex: 0 0 60px; 
+}
+.column-header-flex {
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center;
+  width: 100%;
+}
+.vertical-title {
+  writing-mode: vertical-lr; 
+  letter-spacing: 6px;
+  font-weight: bold;
+  color: #909399;
+  margin: 40px auto;
+  text-align: center;
+}
+.board-column { 
+  background-color: #ebecf0; 
+  border-radius: 8px; 
+  height: 100%; 
 }
 </style>
