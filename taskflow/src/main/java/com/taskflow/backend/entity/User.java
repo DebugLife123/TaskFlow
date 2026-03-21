@@ -12,8 +12,18 @@ public class User {
     private String password;
     private String nickname;
 
+    public String getAvatar() {
+        return avatar;
+    }
+
+    public void setAvatar(String avatar) {
+        this.avatar = avatar;
+    }
+
     // 无参构造（MyBatis-Plus 必须要求有）
     public User() {}
+    // ✨ 新增：对应数据库里的 avatar 字段
+    private String avatar;
 
     // 手动 Getter 和 Setter
     public Long getId() { return id; }

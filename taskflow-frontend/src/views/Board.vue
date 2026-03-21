@@ -8,6 +8,8 @@ import * as echarts from 'echarts'
 // ================= 1. 响应式数据定义 =================
 const router = useRouter()
 const nickname = ref('加载中...')
+// ✨ 新增：动态存储用户头像地址，默认给一个初始头像
+const userAvatarUrl = ref('https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png') 
 const taskList = ref([]) 
 
 // 搜索与过滤变量
@@ -44,31 +46,43 @@ const editTaskForm = ref({})
 const updateCharts = () => {
   if (!statusChart.value || !priorityChart.value) return;
 
-  const todoCount = taskList.value.filter(t => t.status === 0).length
-  const doingCount = taskList.value.filter(t => t.status === 1).length
-  const doneCount = taskList.value.filter(t => t.status === 2).length
+  const todoCount = taskList.value.filter(t => t.status === 0).length;
+  const doingCount = taskList.value.filter(t => t.status === 1).length;
+  const doneCount = taskList.value.filter(t => t.status === 2).length;
 
   statusChart.value.setOption({
-    title: { text: '任务进度漏斗', left: 'center', textStyle: { color: '#606266' } },
-    tooltip: { trigger: 'item' },
-    grid: { left: '10%', right: '10%', bottom: '15%' },
-    xAxis: { type: 'category', data: ['待办 (TODO)', '进行中 (DOING)', '已完成 (DONE)'] },
-    yAxis: { type: 'value', minInterval: 1 },
-    series: [{
-      type: 'bar',
-      barWidth: '40%',
-      data: [
-        { value: todoCount, itemStyle: { color: '#F56C6C', borderRadius: [6, 6, 0, 0] } },
-        { value: doingCount, itemStyle: { color: '#E6A23C', borderRadius: [6, 6, 0, 0] } },
-        { value: doneCount, itemStyle: { color: '#67C23A', borderRadius: [6, 6, 0, 0] } }
-      ],
-      label: { show: true, position: 'top', fontSize: 16, fontWeight: 'bold' }
-    }]
-  })
+    title: { text: '任务进度概览', left: 'center', top: 10, textStyle: { color: '#606266', fontSize: 16 } },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} 项' }, 
+    grid: { left: '5%', right: '5%', bottom: '15%', top: '25%', containLabel: true },
+    xAxis: { 
+      type: 'category', 
+      data: ['待办 (TODO)', '进行中 (DOING)', '已完成 (DONE)'], 
+      axisLabel: { interval: 0, color: '#606266', fontWeight: 'bold' }, 
+      axisTick: { show: false }, 
+      axisLine: { lineStyle: { color: '#DCDFE6' } } 
+    },
+    yAxis: { 
+      type: 'value', 
+      minInterval: 1,
+      splitLine: { lineStyle: { type: 'dashed', color: '#EBEEF5' } } 
+    }, 
+    series: [
+      {
+        type: 'bar',
+        barMaxWidth: 50, 
+        data: [
+          { value: todoCount, itemStyle: { color: '#F56C6C', borderRadius: [4, 4, 0, 0] } },
+          { value: doingCount, itemStyle: { color: '#E6A23C', borderRadius: [4, 4, 0, 0] } },
+          { value: doneCount, itemStyle: { color: '#67C23A', borderRadius: [4, 4, 0, 0] } }
+        ],
+        label: { show: true, position: 'top', fontSize: 16, fontWeight: 'bold' }
+      }
+    ]
+  });
 
-  const p1Count = taskList.value.filter(t => t.priority === 1).length
-  const p2Count = taskList.value.filter(t => t.priority === 2).length
-  const p3Count = taskList.value.filter(t => t.priority === 3).length
+  const p1Count = taskList.value.filter(t => t.priority === 1).length;
+  const p2Count = taskList.value.filter(t => t.priority === 2).length;
+  const p3Count = taskList.value.filter(t => t.priority === 3).length;
 
   priorityChart.value.setOption({
     title: { text: '优先级分布', left: 'center', textStyle: { color: '#606266' } },
@@ -87,8 +101,8 @@ const updateCharts = () => {
         { value: p3Count, name: '🔴 紧急', itemStyle: { color: '#F56C6C' } }
       ]
     }]
-  })
-}
+  });
+};
 
 
 // ================= 3. 数据获取逻辑 =================
@@ -103,14 +117,23 @@ const fetchTasks = async () => {
   }
 }
 
+// ✨ 核心修复：带上 Token，并接收后端的 avatar 地址
 const fetchUserInfo = async () => {
   try {
-    const res = await axios.get('/api/user/info')
+    const res = await axios.get('/api/user/info', {
+      headers: { token: localStorage.getItem('token') } // 必须带上Token身份
+    })
     if (res.data.code === 200) {
       nickname.value = res.data.data.nickname
+      // 如果后端返回了头像地址，就更新它
+      if (res.data.data.avatar) {
+        userAvatarUrl.value = res.data.data.avatar
+      }
     }
   } catch (err) {
-    console.error("获取用户信息失败")
+    console.error("获取用户信息失败", err)
+    ElMessage.error("登录状态已失效，请重新登录")
+    router.push('/login')
   }
 }
 
@@ -257,6 +280,16 @@ const filteredTaskList = computed(() => {
 const todoTasks = computed(() => filteredTaskList.value.filter(task => task.status === 0))
 const doingTasks = computed(() => filteredTaskList.value.filter(task => task.status === 1))
 const doneTasks = computed(() => filteredTaskList.value.filter(task => task.status === 2))
+
+// ================= 9. 修复折叠面板 ECharts 塌陷问题 =================
+const handleCollapseChange = (activeNames) => {
+  if (activeNames.includes('1')) {
+    setTimeout(() => {
+      statusChart.value?.resize();
+      priorityChart.value?.resize();
+    }, 300);
+  }
+}
 </script>
 
 <template>
@@ -265,7 +298,24 @@ const doneTasks = computed(() => filteredTaskList.value.filter(task => task.stat
       <el-header class="header">
         <div class="logo">🚀 TaskFlow Kanban</div>
         <div class="user-info">
-          <span class="welcome">欢迎回来，<strong>{{ nickname }}</strong></span>
+          <div class="user-profile">
+            <div class="user-details">
+              <span class="user-name">{{ nickname }}</span>
+              <div class="user-status">
+                <span class="status-dot"></span>
+                <span class="status-text">在线</span>
+              </div>
+            </div>
+            <el-avatar 
+              :size="40" 
+              :src="userAvatarUrl" 
+              @click="router.push('/profile')"
+              style="cursor: pointer; border: 2px solid #fff; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1); transition: transform 0.3s;"
+              onmouseover="this.style.transform='scale(1.1)'"
+              onmouseout="this.style.transform='scale(1)'"
+            />
+          </div>
+
           <el-button type="danger" size="small" plain @click="handleLogout">退出登录</el-button>
         </div>
       </el-header>
@@ -293,7 +343,7 @@ const doneTasks = computed(() => filteredTaskList.value.filter(task => task.stat
           <el-button type="primary" @click="dialogVisible = true"> + 新增任务 </el-button>
         </div>
 
-        <el-collapse style="margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: none; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);">
+        <el-collapse @change="handleCollapseChange" style="margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: none; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);">
           <el-collapse-item name="1">
             <template #title>
               <div style="font-size: 16px; font-weight: bold; padding-left: 10px; color: #409EFF;">
@@ -565,7 +615,51 @@ const doneTasks = computed(() => filteredTaskList.value.filter(task => task.stat
   padding: 0 50px;
 }
 .logo { font-size: 20px; font-weight: bold; color: #409eff; }
-.welcome { margin-right: 20px; font-size: 14px; }
+/* ✨ 新增：用户头像与状态栏样式 */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px; 
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end; 
+}
+
+.user-name {
+  font-size: 15px;
+  font-weight: bold;
+  color: #303133;
+  line-height: 1.2;
+}
+
+.user-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #67C23A; 
+  border-radius: 50%;
+  box-shadow: 0 0 5px rgba(103, 194, 58, 0.6); 
+}
+
+.status-text {
+  font-size: 12px;
+  color: #909399;
+}
 .board-header { display: flex; justify-content: center; align-items: center; margin-bottom: 30px; gap: 20px; }
 .board-container { padding: 20px 50px; background-color: #f5f7fa; min-height: calc(100vh - 60px); }
 .board-column { background-color: #ebecf0; border-radius: 8px; min-height: 500px; }

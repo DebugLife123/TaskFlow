@@ -16,6 +16,12 @@ const routes = [
       if (token) next()
       else next('/login')
     }
+  },
+  // 在 routes 数组中添加以下对象
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('../views/Profile.vue') // 懒加载引入
   }
 ]
 
