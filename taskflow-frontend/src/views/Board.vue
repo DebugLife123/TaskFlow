@@ -1,13 +1,77 @@
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch ,shallowRef} from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus' // ✨ 补上了 ElMessageBox
 import axios from 'axios'
+import * as echarts from 'echarts' // ✨ 新增：完整引入 ECharts
 
 // --- 1. 响应式数据定义 ---
 const router = useRouter()
 const nickname = ref('加载中...')
 const taskList = ref([]) // ✅ 只保留这一个声明
+// --- 新增：搜索与过滤的响应式变量 ---
+const searchQuery = ref('')     // 存放用户输入的搜索关键字
+const filterPriority = ref('')  // 存放选中的优先级，默认空表示“看全部”
+// --- 新增：ECharts 图表容器引用 ---
+const statusChartRef = ref(null)    // 指向状态图表的 DOM
+const priorityChartRef = ref(null)  // 指向优先级图表的 DOM
+// --- ECharts 实例引用（导师黑科技：必须用 shallowRef 提升性能） ---
+const statusChart = shallowRef(null)
+const priorityChart = shallowRef(null)
+
+// --- 1. 初始化并渲染图表的方法 ---
+const updateCharts = () => {
+  if (!statusChart.value || !priorityChart.value) return;
+
+  // 📊 左侧图表：任务状态柱状图
+  const todoCount = taskList.value.filter(t => t.status === 0).length
+  const doingCount = taskList.value.filter(t => t.status === 1).length
+  const doneCount = taskList.value.filter(t => t.status === 2).length
+
+  statusChart.value.setOption({
+    title: { text: '任务进度漏斗', left: 'center', textStyle: { color: '#606266' } },
+    tooltip: { trigger: 'item' },
+    grid: { left: '10%', right: '10%', bottom: '15%' },
+    xAxis: { type: 'category', data: ['待办 (TODO)', '进行中 (DOING)', '已完成 (DONE)'] },
+    yAxis: { type: 'value', minInterval: 1 }, // 保证Y轴是整数
+    series: [{
+      type: 'bar',
+      barWidth: '40%',
+      data: [
+        { value: todoCount, itemStyle: { color: '#F56C6C', borderRadius: [6, 6, 0, 0] } },
+        { value: doingCount, itemStyle: { color: '#E6A23C', borderRadius: [6, 6, 0, 0] } },
+        { value: doneCount, itemStyle: { color: '#67C23A', borderRadius: [6, 6, 0, 0] } }
+      ],
+      label: { show: true, position: 'top', fontSize: 16, fontWeight: 'bold' }
+    }]
+  })
+
+  // 🥧 右侧图表：优先级环形图
+  const p1Count = taskList.value.filter(t => t.priority === 1).length
+  const p2Count = taskList.value.filter(t => t.priority === 2).length
+  const p3Count = taskList.value.filter(t => t.priority === 3).length
+
+  priorityChart.value.setOption({
+    title: { text: '优先级分布', left: 'center', textStyle: { color: '#606266' } },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} 项 ({d}%)' },
+    legend: { bottom: '0', left: 'center' },
+    series: [{
+      type: 'pie',
+      radius: ['40%', '70%'], // 环形图设计更显高级
+      avoidLabelOverlap: false,
+      itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false, position: 'center' },
+      emphasis: { label: { show: true, fontSize: 18, fontWeight: 'bold' } },
+      data: [
+        { value: p1Count, name: '🟢 普通', itemStyle: { color: '#909399' } },
+        { value: p2Count, name: '🟡 中等', itemStyle: { color: '#E6A23C' } },
+        { value: p3Count, name: '🔴 紧急', itemStyle: { color: '#F56C6C' } }
+      ]
+    }]
+  })
+}
+
+
 const dialogVisible = ref(false)
 const taskForm = reactive({ 
   title: '', 
@@ -53,6 +117,48 @@ const submitEditTask = async () => {
   } catch (error) {
     console.error("修改任务报错：", error)
     ElMessage.error('修改失败，请检查网络')
+  }
+}
+// --- ✨ 新增：原生拖拽流转核心逻辑 ---
+const draggedTask = ref(null) // 用来记录当前被鼠标抓在空中的是哪个任务
+
+// 1. 拖拽开始：把当前抓起的卡片存起来
+const handleDragStart = (task) => {
+  draggedTask.value = task
+}
+
+// 2. 拖拽结束：松开鼠标时清理状态
+const handleDragEnd = () => {
+  draggedTask.value = null
+}
+
+// 3. 拖拽放下（松手）：最核心的业务逻辑
+const handleDrop = async (newStatus) => {
+  if (!draggedTask.value) return
+  if (draggedTask.value.status === newStatus) return // 如果是在同一列原地放下，啥也不做
+
+  // 记录老状态，为了做容错处理
+  const oldStatus = draggedTask.value.status
+  
+  try {
+    // 💡 导师黑科技：乐观更新 (Optimistic UI)
+    // 先在前端瞬间把卡片状态改掉，用户体验是“零延迟”的丝滑
+    draggedTask.value.status = newStatus 
+    
+    // 然后再悄悄发请求给后端更新数据库
+    const res = await axios.post('/api/tasks/update', draggedTask.value)
+    if (res.data.code === 200) {
+      ElMessage.success('流转成功！')
+    } else {
+      throw new Error(res.data.message)
+    }
+  } catch (error) {
+    // 如果后端报错或者断网了，把卡片状态弹回原来的那一列
+    draggedTask.value.status = oldStatus
+    ElMessage.error('拖拽同步失败，已回滚')
+  } finally {
+    draggedTask.value = null
+    fetchTasks() // 保险起见，重新同步一次最新数据，图表也会跟着刷新
   }
 }
 
@@ -153,12 +259,51 @@ const handleLogout = () => {
 onMounted(() => {
   fetchUserInfo()
   fetchTasks()
+  // 确保 DOM 渲染完毕后再初始化 ECharts
+  setTimeout(() => {
+    if (statusChartRef.value) statusChart.value = echarts.init(statusChartRef.value)
+    if (priorityChartRef.value) priorityChart.value = echarts.init(priorityChartRef.value)
+    
+    // 如果刚进页面已经有数据了，直接画图
+    if (taskList.value.length > 0) {
+      updateCharts()
+    }
+  }, 100)
+  // 监听浏览器窗口大小变化，让图表自动缩放（极其影响体验的细节！）
+  window.addEventListener('resize', () => {
+    statusChart.value?.resize()
+    priorityChart.value?.resize()
+  })
 })
 
+// --- 3. 建立响应式联动：只要任务列表数据一变，自动重新画图 ---
+watch(() => taskList.value, () => {
+  updateCharts()
+}, { deep: true })
+
 // --- 6. 计算属性 ---
-const todoTasks = computed(() => taskList.value.filter(task => task.status === 0))
-const doingTasks = computed(() => taskList.value.filter(task => task.status === 1))
-const doneTasks = computed(() => taskList.value.filter(task => task.status === 2))
+// --- 6. 计算属性：超级数据漏斗 ---
+
+// 第一层漏斗：先根据【搜索词】和【优先级】过滤出所有符合条件的任务
+const filteredTaskList = computed(() => {
+  return taskList.value.filter(task => {
+    // 1. 检查搜索词：如果没输入搜索词，就算匹配成功；如果输入了，就看标题或详情里包不包含这个词
+    const matchSearch = !searchQuery.value || 
+      task.title.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
+      (task.content && task.content.toLowerCase().includes(searchQuery.value.toLowerCase()));
+      
+    // 2. 检查优先级：如果没选优先级，就算匹配成功；如果选了，就必须完全等于选中的级别
+    const matchPriority = !filterPriority.value || task.priority === filterPriority.value;
+    
+    // 必须同时满足上面两个条件，这个任务才能流到下一步
+    return matchSearch && matchPriority;
+  });
+});
+
+// 第二层漏斗：把刚刚过滤出来的结果，再按照 待办/进行中/已完成 分发给三列
+const todoTasks = computed(() => filteredTaskList.value.filter(task => task.status === 0))
+const doingTasks = computed(() => filteredTaskList.value.filter(task => task.status === 1))
+const doneTasks = computed(() => filteredTaskList.value.filter(task => task.status === 2))
 </script>
 
 <template>
@@ -175,14 +320,61 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
       <el-main class="board-container">
         <div class="board-header">
           <h2 style="margin: 0;">🚀 TaskFlow 敏捷看板</h2>
+          
+          <div class="filter-area" style="display: flex; gap: 15px; margin-left: auto; margin-right: 20px;">
+            <el-input 
+              v-model="searchQuery" 
+              placeholder="搜索任务标题或内容..." 
+              prefix-icon="Search"
+              clearable
+              style="width: 250px;"
+            />
+            
+            <el-select v-model="filterPriority" placeholder="全部优先级" clearable style="width: 150px;">
+              <el-option label="🟢 普通" :value="1" />
+              <el-option label="🟡 中等" :value="2" />
+              <el-option label="🔴 紧急" :value="3" />
+            </el-select>
+          </div>
+
           <el-button type="primary" @click="dialogVisible = true"> + 新增任务 </el-button>
         </div>
+        <el-collapse style="margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: none; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);">
+          <el-collapse-item name="1">
+            <template #title>
+              <div style="font-size: 16px; font-weight: bold; padding-left: 10px; color: #409EFF;">
+                📊 展开项目数据看板
+              </div>
+            </template>
+            <el-row :gutter="20" style="padding: 10px 20px;">
+              <el-col :span="12">
+                <el-card shadow="hover" style="border-radius: 12px;">
+                  <div ref="statusChartRef" style="height: 300px; width: 100%;"></div>
+                </el-card>
+              </el-col>
+              <el-col :span="12">
+                <el-card shadow="hover" style="border-radius: 12px;">
+                  <div ref="priorityChartRef" style="height: 300px; width: 100%;"></div>
+                </el-card>
+              </el-col>
+            </el-row>
+          </el-collapse-item>
+        </el-collapse>
         
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-card class="board-column">
+            <el-card class="board-column" @dragover.prevent @drop="handleDrop(0)">
               <template #header><div class="column-header">待办事项 (TODO)</div></template>
-              <el-card v-for="task in todoTasks" :key="task.id" class="task-card" shadow="hover" @click="openEditDialog(task)" style="cursor: pointer;">
+              <el-card 
+                v-for="task in todoTasks" :key="task.id" 
+                class="task-card" shadow="hover" 
+                @click="openEditDialog(task)" 
+                style="cursor: grab;"
+                draggable="true"
+                @dragstart="handleDragStart(task)"
+                @dragend="handleDragEnd"
+                :class="{ 'is-dragging': draggedTask?.id === task.id }"
+              >
                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                 <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
                 <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
@@ -204,9 +396,18 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
           </el-col>
 
           <el-col :span="8">
-            <el-card class="board-column">
+            <el-card class="board-column" @dragover.prevent @drop="handleDrop(1)">
               <template #header><div class="column-header" style="color: #e6a23c;">进行中 (DOING)</div></template>
-             <el-card v-for="task in doingTasks" :key="task.id" class="task-card" shadow="hover" @click="openEditDialog(task)" style="cursor: pointer;">
+            <el-card 
+                v-for="task in doingTasks" :key="task.id" 
+                class="task-card" shadow="hover" 
+                @click="openEditDialog(task)" 
+                style="cursor: grab;"
+                draggable="true"
+                @dragstart="handleDragStart(task)"
+                @dragend="handleDragEnd"
+                :class="{ 'is-dragging': draggedTask?.id === task.id }"
+              >
                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                 <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
                 <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
@@ -230,9 +431,18 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
           </el-col>
 
           <el-col :span="8">
-            <el-card class="board-column">
+            <el-card class="board-column" @dragover.prevent @drop="handleDrop(2)">
               <template #header><div class="column-header" style="color: #67c23a;">已完成 (DONE)</div></template>
-             <el-card v-for="task in doneTasks" :key="task.id" class="task-card" shadow="hover" @click="openEditDialog(task)" style="cursor: pointer;">
+             <el-card 
+                v-for="task in doneTasks" :key="task.id" 
+                class="task-card" shadow="hover" 
+                @click="openEditDialog(task)" 
+                style="cursor: grab;"
+                draggable="true"
+                @dragstart="handleDragStart(task)"
+                @dragend="handleDragEnd"
+                :class="{ 'is-dragging': draggedTask?.id === task.id }"
+              >
                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                 <h4 style="margin: 0; color: #333;">{{ task.title }}</h4>
                 <el-tag v-if="task.priority === 1" type="info" size="small" effect="plain">普通</el-tag>
@@ -364,4 +574,11 @@ const doneTasks = computed(() => taskList.value.filter(task => task.status === 2
 .card-footer { margin-top: 15px; text-align: right; }
 .task-content { font-size: 14px; color: #666; margin-top: 8px; }
 h4 { margin: 0; color: #333; }
+/* ✨ 新增：被抓起时的卡片虚影特效 */
+.is-dragging {
+  opacity: 0.4;
+  transform: scale(0.98);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+  border: 1px dashed #409EFF !important;
+}
 </style>
